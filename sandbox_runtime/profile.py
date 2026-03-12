@@ -79,9 +79,47 @@ def mac_get_mandatory_deny_patterns(allow_git_config: bool = False) -> list[str]
     return list(dict.fromkeys(deny_paths))  # deduplicate preserving order
 
 
-def generate_move_blocking_rules(path_patterns: list[str], log_tag: str) -> list[str]:
-    """Generate deny rules for file-write-unlink to prevent move/rename bypass."""
+def generate_move_blocking_rules(
+    path_patterns: list[str],
+    log_tag: str,
+    allow_paths: list[str] | None = None,
+) -> list[str]:
+    """Generate deny rules for file-write-unlink to prevent move/rename bypass.
+
+    Args:
+        path_patterns: Deny path patterns to generate move-blocking rules for.
+        log_tag: Log tag for sandbox violations.
+        allow_paths: Allowed write paths. Ancestor deny-unlink rules will not be
+            generated for directories that are subpaths of (or equal to) an
+            allowed write path, since the user explicitly permitted writes there.
+    """
     rules: list[str] = []
+    # Normalize allow paths for comparison
+    normalized_allow: list[str] = []
+    for p in allow_paths or []:
+        np = normalize_path_for_sandbox(p)
+        if not contains_glob_chars(np):
+            normalized_allow.append(np)
+
+    def _is_within_allow(path: str) -> bool:
+        """Check if path is equal to or a subpath of any allowed write path."""
+        for ap in normalized_allow:
+            if path == ap or path.startswith(ap + "/"):
+                return True
+        return False
+
+    def _add_ancestor_rules(base: str) -> None:
+        """Add deny-unlink rules for ancestor directories, skipping allowed paths."""
+        for ancestor in _get_ancestor_directories(base):
+            if _is_within_allow(ancestor):
+                continue
+            rules.extend(
+                [
+                    "(deny file-write-unlink",
+                    f"  (literal {escape_path(ancestor)})",
+                    f'  (with message "{log_tag}"))',
+                ]
+            )
 
     for path_pattern in path_patterns:
         normalized = normalize_path_for_sandbox(path_pattern)
@@ -103,21 +141,15 @@ def generate_move_blocking_rules(path_patterns: list[str], log_tag: str) -> list
                     if static_prefix.endswith("/")
                     else os.path.dirname(static_prefix)
                 )
-                rules.extend(
-                    [
-                        "(deny file-write-unlink",
-                        f"  (literal {escape_path(base_dir)})",
-                        f'  (with message "{log_tag}"))',
-                    ]
-                )
-                for ancestor in _get_ancestor_directories(base_dir):
+                if not _is_within_allow(base_dir):
                     rules.extend(
                         [
                             "(deny file-write-unlink",
-                            f"  (literal {escape_path(ancestor)})",
+                            f"  (literal {escape_path(base_dir)})",
                             f'  (with message "{log_tag}"))',
                         ]
                     )
+                _add_ancestor_rules(base_dir)
         else:
             rules.extend(
                 [
@@ -126,14 +158,7 @@ def generate_move_blocking_rules(path_patterns: list[str], log_tag: str) -> list
                     f'  (with message "{log_tag}"))',
                 ]
             )
-            for ancestor in _get_ancestor_directories(normalized):
-                rules.extend(
-                    [
-                        "(deny file-write-unlink",
-                        f"  (literal {escape_path(ancestor)})",
-                        f'  (with message "{log_tag}"))',
-                    ]
-                )
+            _add_ancestor_rules(normalized)
 
     return rules
 
@@ -239,7 +264,11 @@ def generate_write_rules(
                 ]
             )
 
-    rules.extend(generate_move_blocking_rules(deny_paths, log_tag))
+    rules.extend(
+        generate_move_blocking_rules(
+            deny_paths, log_tag, allow_paths=list(config.allow_only or [])
+        )
+    )
     return rules
 
 

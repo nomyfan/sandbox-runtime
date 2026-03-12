@@ -24,7 +24,8 @@ def main() -> None:
         result = manager.execute(
             "mkdir -p /tmp/myapp && "
             "echo ok > /tmp/myapp/test.txt && "
-            "cat /tmp/myapp/test.txt"
+            "cat /tmp/myapp/test.txt && "
+            "rm -rf /tmp/myapp"
         )
         print(f"Exit code: {result.returncode}")
         print(f"Stdout: {result.stdout.strip()}")
