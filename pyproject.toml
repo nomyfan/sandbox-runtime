@@ -1,0 +1,41 @@
+[project]
+name = "sandbox-runtime"
+version = "0.1.0"
+description = "macOS filesystem sandbox runtime using sandbox-exec and Seatbelt profiles"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[project.scripts]
+srt = "sandbox_runtime.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pyright>=1.1",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "RUF",   # ruff-specific rules
+]
+ignore = [
+    "SIM105",  # contextlib.suppress — less readable for simple cases
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sandbox_runtime"]
